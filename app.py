@@ -2,10 +2,12 @@ from flask import Flask, request, jsonify
 from models.user import User
 from database import db
 from flask_login import LoginManager, login_user, current_user, logout_user, login_required
+import bcrypt
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = "your_secret_key"
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = "mysql+pymysql://admin:admin123@127.0.0.1:3306/flask-crud"
+
 
 loginManager = LoginManager() #instanciando a função do Login Manager
 db.init_app(app)
@@ -23,15 +25,14 @@ def loadUser(userId):
 def login():
   data = request.json
 
-  username = data.get("username")
-  password = data.get("password")
+  user = User.query.filter_by(username=data.get("username")).first() #estou filtrando na tabela Users se encontra o username recebido pela api e retorna o primeiruse
+  
+  password = bcrypt.checkpw(str.encode(data.get("password")), str.encode(user.password))
 
-  if username and password:
+  if user and password:
 
-    user = User.query.filter_by(username=username).first() #estou filtrando na tabela Users se encontra o username recebido pela api e retorna o primeiro
-    if user and user.password == password:
+    if user and password == True:
       login_user(user)
-      print(f"User: {current_user.is_authenticated}")
       return jsonify({
         "Message": "Autenticação Realizada com Sucesso",
         "id": user.id
@@ -54,10 +55,10 @@ def createUser():
   data = request.json
 
   username = data.get("username")
-  password = data.get("password")
+  password = bcrypt.hashpw(str.encode(data.get("password")), bcrypt.gensalt())
 
   if username and password:
-    user = User(username=username, password=password)
+    user = User(username=username, password=password, role='user')
     db.session.add(user)
     db.session.commit()
     return jsonify({
@@ -88,6 +89,11 @@ def updateUser(idUser):
   data = request.json
   user = User.query.get(idUser)
 
+  if idUser != current_user.id and current_user.role == "user":
+    return jsonify({
+      "message": "Operação não permitida"
+    }), 403
+
   if user and data:
     user.password = data.get("password")
 
@@ -111,8 +117,15 @@ def deleteUser(idUser):
 
   if idUser == current_user.id:
     return jsonify({
-      "message": "Deleção não permitida"
+      "message": "Não é possível apagar o próprio usuário."
     }), 403
+  
+  if current_user.role != "admin":
+    print(current_user.id)
+    return jsonify({
+      "message": "Operação não permitida"
+    }), 403
+
 
   if user:
     db.session.delete(user)
